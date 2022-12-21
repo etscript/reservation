@@ -1,12 +1,15 @@
 use crate::{ReservationError, ReservationId, ReservationManager, Rsvp};
 use async_trait::async_trait;
-use sqlx::{postgres::types::PgRange, Row};
 use chrono::{DateTime, Utc};
+use sqlx::{postgres::types::PgRange, Row};
 
 #[async_trait]
 impl Rsvp for ReservationManager {
     // make a reservation
-    async fn reserve(&self, mut rsvp: abi::Reservation) -> Result<abi::Reservation, ReservationError> {
+    async fn reserve(
+        &self,
+        mut rsvp: abi::Reservation,
+    ) -> Result<abi::Reservation, ReservationError> {
         if rsvp.start.is_none() || rsvp.end.is_none() {
             return Err(ReservationError::InvalidReservation);
         }
@@ -18,8 +21,7 @@ impl Rsvp for ReservationManager {
 
         let timespan: PgRange<DateTime<Utc>> = (start..end).into();
         // generate a insert sql for the reservation
-        let sql =  
-            "INSERT INTO rsvp.reservations (user_id, resource_id, timespan, note, status) VALUES ($1, $2, 
+        let sql = "INSERT INTO rsvp.reservations (user_id, resource_id, timespan, note, status) VALUES ($1, $2,
             $3, $4, $5::rsvp.reservation_status) RETURNING id";
         // execute the sql
         let id = sqlx::query(sql)
@@ -29,7 +31,8 @@ impl Rsvp for ReservationManager {
             .bind(&rsvp.note.clone())
             .bind(status.to_string())
             .fetch_one(&self.pool)
-            .await?.get(0);
+            .await?
+            .get(0);
         rsvp.id = id;
         Ok(rsvp)
     }
@@ -73,19 +76,19 @@ impl ReservationManager {
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use abi::convert_to_timestamp;
 
     use super::*;
 
-    #[sqlx_database_tester::test(
-        pool(variable = "migrated_pool", migrations = "../migrations"),
-    )]
-    async fn reserve_should_work_for_valid_windows(){
-        let manager = ReservationManager{pool: migrated_pool.clone()};
+    #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
+    async fn reserve_should_work_for_valid_windows() {
+        let manager = ReservationManager {
+            pool: migrated_pool.clone(),
+        };
         let start = convert_to_timestamp(Utc::now());
         let end = convert_to_timestamp(Utc::now());
-        let rsvp = abi::Reservation{
+        let rsvp = abi::Reservation {
             id: 0,
             user_id: "user1".to_string(),
             resource_id: "resource1".to_string(),
