@@ -10,6 +10,7 @@ dependencies = [
  "prost",
  "prost-types",
  "sqlx",
+ "thiserror",
  "tonic",
  "tonic-build",
 ]

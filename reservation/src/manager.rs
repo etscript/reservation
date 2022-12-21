@@ -1,25 +1,17 @@
-use crate::{ReservationError, ReservationId, ReservationManager, Rsvp};
+use crate::{ReservationId, ReservationManager, Rsvp};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use sqlx::{postgres::types::PgRange, Row};
+use sqlx::Row;
 
 #[async_trait]
 impl Rsvp for ReservationManager {
     // make a reservation
-    async fn reserve(
-        &self,
-        mut rsvp: abi::Reservation,
-    ) -> Result<abi::Reservation, ReservationError> {
-        if rsvp.start.is_none() || rsvp.end.is_none() {
-            return Err(ReservationError::InvalidReservation);
-        }
+    async fn reserve(&self, mut rsvp: abi::Reservation) -> Result<abi::Reservation, abi::Error> {
+        rsvp.validate()?;
+
         let status = abi::ReservationStatus::from_i32(rsvp.status)
             .unwrap_or(abi::ReservationStatus::Pending);
 
-        let start = abi::convert_to_utc_timestamp(rsvp.start.as_ref().unwrap().clone());
-        let end = abi::convert_to_utc_timestamp(rsvp.end.as_ref().unwrap().clone());
-
-        let timespan: PgRange<DateTime<Utc>> = (start..end).into();
+        let timespan = rsvp.get_timestamp();
         // generate a insert sql for the reservation
         let sql = "INSERT INTO rsvp.reservations (user_id, resource_id, timespan, note, status) VALUES ($1, $2,
             $3, $4, $5::rsvp.reservation_status) RETURNING id";
@@ -38,10 +30,7 @@ impl Rsvp for ReservationManager {
     }
 
     // change reservation status (if current status is pending, change it to confirmed)
-    async fn change_status(
-        &self,
-        _id: ReservationId,
-    ) -> Result<abi::Reservation, ReservationError> {
+    async fn change_status(&self, _id: ReservationId) -> Result<abi::Reservation, abi::Error> {
         todo!()
     }
     // update reservation
@@ -49,22 +38,22 @@ impl Rsvp for ReservationManager {
         &self,
         _id: ReservationId,
         _note: String,
-    ) -> Result<abi::Reservation, ReservationError> {
+    ) -> Result<abi::Reservation, abi::Error> {
         todo!()
     }
     // delete reservation
-    async fn delete(&self, _id: ReservationId) -> Result<abi::Reservation, ReservationError> {
+    async fn delete(&self, _id: ReservationId) -> Result<abi::Reservation, abi::Error> {
         todo!()
     }
     // get reservation by id
-    async fn get(&self, _id: ReservationId) -> Result<abi::Reservation, ReservationError> {
+    async fn get(&self, _id: ReservationId) -> Result<abi::Reservation, abi::Error> {
         todo!()
     }
     // query reservations
     async fn query(
         &self,
         _query: abi::ReservationQuery,
-    ) -> Result<Vec<abi::Reservation>, ReservationError> {
+    ) -> Result<Vec<abi::Reservation>, abi::Error> {
         todo!()
     }
 }
@@ -77,27 +66,21 @@ impl ReservationManager {
 
 #[cfg(test)]
 mod tests {
-    use abi::convert_to_timestamp;
-
     use super::*;
-
     #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
     async fn reserve_should_work_for_valid_windows() {
         let manager = ReservationManager {
             pool: migrated_pool.clone(),
         };
-        let start = convert_to_timestamp(Utc::now());
-        let end = convert_to_timestamp(Utc::now());
-        let rsvp = abi::Reservation {
-            id: 0,
-            user_id: "user1".to_string(),
-            resource_id: "resource1".to_string(),
-            start: Some(start),
-            end: Some(end),
-            note: "just note".to_string(),
-            status: abi::ReservationStatus::Pending as i32,
-        };
+        let start = "2022-12-25T15:00:00-0700".parse().unwrap();
+        let end = "2022-12-28T12:00:00-0700".parse().unwrap();
+        let rsvp = abi::Reservation::new_pending("user1", "resource1", start, end, "just note");
         let rsvp = manager.reserve(rsvp).await.unwrap();
         assert!(rsvp.id > 0);
     }
+
+    // #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
+    // async fn reserve_should_reject_if_id_is_not_empty() {
+    //     todo!()
+    // }
 }
