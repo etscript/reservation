@@ -16,12 +16,11 @@ pub trait Rsvp {
     // change reservation status (if current status is pending, change it to confirmed)
     async fn change_status(&self, id: i64) -> Result<abi::Reservation, abi::Error>;
     // update reservation
-    async fn update(&self, id: ReservationId, note: String)
-        -> Result<abi::Reservation, abi::Error>;
+    async fn update(&self, id: i64, note: String) -> Result<abi::Reservation, abi::Error>;
     // delete reservation
-    async fn delete(&self, id: ReservationId) -> Result<abi::Reservation, abi::Error>;
+    async fn delete(&self, id: i64) -> Result<(), abi::Error>;
     // get reservation by id
-    async fn get(&self, id: ReservationId) -> Result<abi::Reservation, abi::Error>;
+    async fn get(&self, id: i64) -> Result<abi::Reservation, abi::Error>;
     // query reservations
     async fn query(
         &self,

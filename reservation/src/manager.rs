@@ -1,4 +1,4 @@
-use crate::{ReservationId, ReservationManager, Rsvp};
+use crate::{ReservationManager, Rsvp};
 use async_trait::async_trait;
 use sqlx::Row;
 
@@ -43,20 +43,37 @@ impl Rsvp for ReservationManager {
         Ok(rsvp)
     }
     // update reservation
-    async fn update(
-        &self,
-        _id: ReservationId,
-        _note: String,
-    ) -> Result<abi::Reservation, abi::Error> {
-        todo!()
+    async fn update(&self, id: i64, note: String) -> Result<abi::Reservation, abi::Error> {
+        let rsvp: abi::Reservation = sqlx::query_as(
+            "UPDATE rsvp.reservations SET note = $2 WHERE id = $1 RETURNING
+            id, user_id, resource_id, timespan, note, status",
+        )
+        .bind(id)
+        .bind(note)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(rsvp)
     }
     // delete reservation
-    async fn delete(&self, _id: ReservationId) -> Result<abi::Reservation, abi::Error> {
-        todo!()
+    async fn delete(&self, id: i64) -> Result<(), abi::Error> {
+        sqlx::query("DELETE FROM rsvp.reservations WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
     }
     // get reservation by id
-    async fn get(&self, _id: ReservationId) -> Result<abi::Reservation, abi::Error> {
-        todo!()
+    async fn get(&self, id: i64) -> Result<abi::Reservation, abi::Error> {
+        let rsvp: abi::Reservation = sqlx::query_as(
+            "SELECT id, user_id, resource_id, timespan, note, status FROM rsvp.reservations WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(rsvp)
     }
     // query reservations
     async fn query(
@@ -75,30 +92,56 @@ impl ReservationManager {
 
 #[cfg(test)]
 mod tests {
+    use sqlx::PgPool;
+
     use super::*;
     #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
     async fn reserve_should_work_for_valid_windows() {
-        let manager = ReservationManager {
-            pool: migrated_pool.clone(),
-        };
-        let start = "2022-12-25T15:00:00-0700".parse().unwrap();
-        let end = "2022-12-28T12:00:00-0700".parse().unwrap();
-        let rsvp = abi::Reservation::new_pending("user1", "resource1", start, end, "just note");
-        let rsvp = manager.reserve(rsvp).await.unwrap();
+        let (rsvp, _manager) = make_reservation(migrated_pool.clone()).await;
         assert!(rsvp.id > 0);
     }
 
     #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
     async fn reserve_change_status_should_work() {
-        let manager = ReservationManager {
-            pool: migrated_pool.clone(),
-        };
-        let start = "2022-12-25T15:00:00-0700".parse().unwrap();
-        let end = "2022-12-28T12:00:00-0700".parse().unwrap();
-        let rsvp = abi::Reservation::new_pending("user1", "resource1", start, end, "just note");
-        let rsvp = manager.reserve(rsvp).await.unwrap();
+        let (rsvp, manager) = make_reservation(migrated_pool.clone()).await;
         assert!(rsvp.id > 0);
         let rsvp = manager.change_status(rsvp.id).await.unwrap();
         assert_eq!(rsvp.status, abi::ReservationStatus::Confirmed as i32);
+    }
+
+    #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
+    async fn reserve_update_note_should_work() {
+        let (rsvp, manager) = make_reservation(migrated_pool.clone()).await;
+        assert!(rsvp.id > 0);
+        let rsvp = manager
+            .update(rsvp.id, "new note".to_string())
+            .await
+            .unwrap();
+        assert_eq!(rsvp.note, "new note");
+    }
+
+    #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
+    async fn get_reserve_should_work() {
+        let (rsvp, manager) = make_reservation(migrated_pool.clone()).await;
+        assert!(rsvp.id > 0);
+        let rsvp = manager.get(rsvp.id).await.unwrap();
+        assert_eq!(rsvp.note, "just note");
+    }
+
+    #[sqlx_database_tester::test(pool(variable = "migrated_pool", migrations = "../migrations"))]
+    async fn delete_reserve_should_work() {
+        let (rsvp, manager) = make_reservation(migrated_pool.clone()).await;
+        assert!(rsvp.id > 0);
+        manager.delete(rsvp.id).await.unwrap();
+        let rsvp = manager.get(rsvp.id).await;
+        assert!(rsvp.is_err());
+    }
+
+    async fn make_reservation(pool: PgPool) -> (abi::Reservation, ReservationManager) {
+        let manager = ReservationManager { pool: pool.clone() };
+        let start = "2022-12-25T15:00:00-0700".parse().unwrap();
+        let end = "2022-12-28T12:00:00-0700".parse().unwrap();
+        let rsvp = abi::Reservation::new_pending("user1", "resource1", start, end, "just note");
+        (manager.reserve(rsvp).await.unwrap(), manager)
     }
 }
